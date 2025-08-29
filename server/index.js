@@ -32,8 +32,19 @@ import cors from 'cors';
 import { promises as fsPromises } from 'fs';
 import { spawn } from 'child_process';
 import os from 'os';
-import pty from 'node-pty';
 import fetch from 'node-fetch';
+
+// 条件加载 node-pty，如果失败则禁用终端功能
+let pty = null;
+let terminalEnabled = false;
+try {
+  pty = await import('node-pty');
+  terminalEnabled = true;
+  console.log('✅ Terminal functionality enabled');
+} catch (error) {
+  console.warn('⚠️ Terminal functionality disabled - node-pty not available:', error.message);
+  terminalEnabled = false;
+}
 import mime from 'mime-types';
 
 import { getProjects, getSessions, getSessionMessages, renameProject, deleteSession, deleteProject, addProjectManually, extractProjectDirectory, clearProjectDirectoryCache } from './projects.js';
@@ -53,7 +64,7 @@ const connectedClients = new Set();
 // Setup file system watcher for Claude projects folder using chokidar
 async function setupProjectsWatcher() {
     const chokidar = (await import('chokidar')).default;
-    const claudeProjectsPath = path.join(process.env.HOME, '.claude', 'projects');
+    const claudeProjectsPath = path.join(os.homedir(), '.claude', 'projects');
 
     if (projectsWatcher) {
         projectsWatcher.close();
@@ -180,21 +191,21 @@ app.use('/api/mcp', authenticateToken, mcpRoutes);
 // Cursor API Routes (protected)
 app.use('/api/cursor', authenticateToken, cursorRoutes);
 
-// Static files served after API routes
-app.use(express.static(path.join(__dirname, '../dist')));
-
-// API Routes (protected)
-app.get('/api/config', authenticateToken, (req, res) => {
-    const host = req.headers.host || `${req.hostname}:${PORT}`;
+// Public API endpoints (no auth required)
+app.get('/api/config', (req, res) => {
+    const host = req.headers.host || `${req.hostname}:${server.address()?.port || 3001}`;
     const protocol = req.protocol === 'https' || req.get('x-forwarded-proto') === 'https' ? 'wss' : 'ws';
 
     console.log('Config API called - Returning host:', host, 'Protocol:', protocol);
 
     res.json({
-        serverPort: PORT,
+        serverPort: server.address()?.port || 3001,
         wsUrl: `${protocol}://${host}`
     });
 });
+
+// Static files served after API routes
+app.use(express.static(path.join(__dirname, '../dist')));
 
 app.get('/api/projects', authenticateToken, async (req, res) => {
     try {
@@ -601,15 +612,23 @@ function handleShellConnection(ws) {
 
                     console.log('🔧 Executing shell command:', shellCommand);
 
+                    if (!terminalEnabled) {
+                        ws.send(JSON.stringify({
+                            type: 'output',
+                            data: '\r\n\x1b[33m⚠️ Terminal functionality is disabled (node-pty not available)\x1b[0m\r\n'
+                        }));
+                        return;
+                    }
+
                     // Use appropriate shell based on platform
                     const shell = os.platform() === 'win32' ? 'powershell.exe' : 'bash';
                     const shellArgs = os.platform() === 'win32' ? ['-Command', shellCommand] : ['-c', shellCommand];
 
-                    shellProcess = pty.spawn(shell, shellArgs, {
+                    shellProcess = pty.default.spawn(shell, shellArgs, {
                         name: 'xterm-256color',
                         cols: 80,
                         rows: 24,
-                        cwd: process.env.HOME || (os.platform() === 'win32' ? process.env.USERPROFILE : '/'),
+                        cwd: os.homedir(),
                         env: {
                             ...process.env,
                             TERM: 'xterm-256color',
@@ -969,7 +988,7 @@ app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, '../dist/index.html'));
   } else {
     // In development, redirect to Vite dev server
-    res.redirect(`http://localhost:${process.env.VITE_PORT || 3001}`);
+    res.redirect(`http://localhost:${process.env.VITE_PORT || 5173}`);
   }
 });
 
@@ -1054,25 +1073,38 @@ async function getFileTree(dirPath, maxDepth = 3, currentDepth = 0, showHidden =
     });
 }
 
-const PORT = process.env.PORT || 3001;
-
-// Initialize database and start server
-async function startServer() {
+// 将启动逻辑封装为可导出的函数，支持动态端口分配
+export async function startServer({ port = process.env.PORT || 0, host = '127.0.0.1' } = {}) {
     try {
         // Initialize authentication database
         await initializeDatabase();
         console.log('✅ Database initialization skipped (testing)');
 
-        server.listen(PORT, '0.0.0.0', async () => {
-            console.log(`Claude Code UI server running on http://0.0.0.0:${PORT}`);
+        return new Promise((resolve, reject) => {
+            server.listen(port, host, async () => {
+                const actualPort = server.address().port;
+                console.log(`Claude Code UI server running on http://${host}:${actualPort}`);
 
-            // Start watching the projects folder for changes
-            await setupProjectsWatcher(); 
+                try {
+                    // Start watching the projects folder for changes
+                    await setupProjectsWatcher(); 
+                    resolve({ port: actualPort, host });
+                } catch (watcherError) {
+                    console.error('❌ Failed to setup projects watcher:', watcherError);
+                    resolve({ port: actualPort, host }); // Still resolve, watcher is not critical
+                }
+            }).on('error', reject);
         });
     } catch (error) {
         console.error('❌ Failed to start server:', error);
-        process.exit(1);
+        throw error;
     }
 }
 
-startServer();
+// 兼容独立运行
+if (import.meta.url === `file://${process.argv[1]}`) {
+    startServer().catch(err => {
+        console.error('❌ Failed to start server:', err);
+        process.exit(1);
+    });
+}

@@ -1,27 +1,62 @@
-import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const DB_PATH = path.join(__dirname, 'auth.db');
+// 使用用户数据目录，优先使用 APP_DATA_DIR 环境变量
+const baseDir = process.env.APP_DATA_DIR || path.join(os.homedir(), '.claude-code-ui');
+const DB_PATH = path.join(baseDir, 'auth.db');
 const INIT_SQL_PATH = path.join(__dirname, 'init.sql');
 
-// Create database connection
-const db = new Database(DB_PATH);
-console.log('Connected to SQLite database');
+// 确保数据目录存在
+try {
+  fs.mkdirSync(baseDir, { recursive: true });
+} catch (error) {
+  if (error.code !== 'EEXIST') {
+    console.error('Failed to create data directory:', error);
+    throw error;
+  }
+}
+
+// 条件加载 better-sqlite3，如果失败则禁用数据库功能
+let Database = null;
+let db = null;
+let databaseEnabled = false;
+
+try {
+  const sqlite3Module = await import('better-sqlite3');
+  Database = sqlite3Module.default;
+  db = new Database(DB_PATH);
+  databaseEnabled = true;
+  console.log('✅ SQLite database functionality enabled');
+} catch (error) {
+  console.warn('⚠️ Database functionality disabled - better-sqlite3 not available:', error.message);
+  databaseEnabled = false;
+  
+  // Create mock database object
+  db = {
+    prepare: () => ({ get: () => null, run: () => ({ lastInsertRowid: 1 }), all: () => [] }),
+    exec: () => {},
+    close: () => {}
+  };
+}
 
 // Initialize database with schema
 const initializeDatabase = async () => {
   try {
+    if (!databaseEnabled) {
+      console.log('⚠️ Database initialization skipped - database disabled');
+      return;
+    }
     const initSQL = fs.readFileSync(INIT_SQL_PATH, 'utf8');
     db.exec(initSQL);
-    console.log('Database initialized successfully');
+    console.log('✅ Database initialized successfully');
   } catch (error) {
-    console.error('Error initializing database:', error.message);
+    console.error('❌ Error initializing database:', error.message);
     throw error;
   }
 };
