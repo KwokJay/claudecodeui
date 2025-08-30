@@ -20,7 +20,7 @@ async function createWindow() {
       sandbox: true,
       nodeIntegration: false,
     },
-    icon: path.join(__dirname, '../public/favicon.png'),
+    icon: path.join(__dirname, '../public/app-icon.svg'),
     titleBarStyle: 'default',
     show: false // Don't show until ready-to-show
   });

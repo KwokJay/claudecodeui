@@ -1,7 +1,7 @@
 {
-  "name": "Claude Code UI",
-  "short_name": "Claude UI",
-  "description": "Claude Code UI web application",
+  "name": "Claude Code UI Desktop",
+  "short_name": "Claude Desktop",
+  "description": "Cross-platform desktop application for Claude Code CLI",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",

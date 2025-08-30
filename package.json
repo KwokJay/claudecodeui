@@ -1,7 +1,7 @@
 {
-  "name": "claude-code-ui",
-  "version": "1.7.0",
-  "description": "A web-based UI for Claude Code CLI",
+  "name": "claude-code-ui-desktop",
+  "version": "0.0.1",
+  "description": "A cross-platform desktop application for Claude Code CLI",
   "type": "module",
   "main": "electron/main.mjs",
   "scripts": {
@@ -19,6 +19,8 @@
     "ai",
     "code",
     "ui",
+    "desktop",
+    "electron",
     "assistant"
   ],
   "author": "Claude Code UI Contributors",
@@ -78,8 +80,8 @@
     "wait-on": "^8.0.4"
   },
   "build": {
-    "appId": "com.claudecodeui.app",
-    "productName": "Claude Code UI",
+    "appId": "com.claudecodeui.desktop",
+    "productName": "Claude Code UI Desktop",
     "files": [
       "dist/**/*",
       "server/**/*",

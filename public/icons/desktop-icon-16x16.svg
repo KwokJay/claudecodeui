@@ -1,0 +1,31 @@
+<svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+  <!-- 圆角矩形背景 -->
+  <defs>
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#2c3e50"/>
+      <stop offset="100%" style="stop-color:#3498db"/>
+    </linearGradient>
+  </defs>
+  
+  <!-- 应用背景 -->
+  <rect width="16" height="16" rx="4" ry="4" fill="url(#bgGradient)"/>
+  
+  <!-- 桌面显示器外壳 -->
+  <rect x="3" y="3" width="10" height="7" rx="0" ry="0" fill="white"/>
+  
+  <!-- 显示器屏幕 -->
+  <rect x="3" y="3" width="9" height="5" rx="0" ry="0" fill="#2c3e50"/>
+  
+  <!-- 窗口控制点 -->
+  <circle cx="4" cy="4" r="0" fill="#e74c3c"/>
+  <circle cx="5" cy="4" r="0" fill="#f39c12"/>
+  <circle cx="5" cy="4" r="0" fill="#27ae60"/>
+  
+  <!-- 终端提示符 -->
+  <text x="4" y="5" font-family="monospace" font-size="1" fill="white" font-weight="bold">&gt;</text>
+  <rect x="5" y="5" width="1" height="0" fill="white"/>
+  
+  <!-- 显示器底座 -->
+  <rect x="7" y="9" width="2" height="0" rx="0" ry="0" fill="white"/>
+  <rect x="6" y="9" width="5" height="1" rx="0" ry="0" fill="white"/>
+</svg>
