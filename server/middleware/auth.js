@@ -18,8 +18,25 @@ const validateApiKey = (req, res, next) => {
   next();
 };
 
-// JWT authentication middleware
+// ============================================
+// AUTHENTICATION DISABLED
+// ============================================
+// Note: Authentication functionality is temporarily disabled
+// All authentication-related code is preserved for future use
+
+// JWT authentication middleware (DISABLED)
 const authenticateToken = async (req, res, next) => {
+  // AUTHENTICATION DISABLED - Skip all token verification
+  // Create a mock user object for compatibility
+  req.user = {
+    id: 1,
+    username: 'anonymous',
+    created_at: new Date().toISOString()
+  };
+  next();
+  
+  // Original authentication code (commented out):
+  /*
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
 
@@ -42,6 +59,7 @@ const authenticateToken = async (req, res, next) => {
     console.error('Token verification error:', error);
     return res.status(403).json({ error: 'Invalid token' });
   }
+  */
 };
 
 // Generate JWT token (never expires)
@@ -56,8 +74,16 @@ const generateToken = (user) => {
   );
 };
 
-// WebSocket authentication function
+// WebSocket authentication function (DISABLED)
 const authenticateWebSocket = (token) => {
+  // AUTHENTICATION DISABLED - Always return mock user
+  return {
+    userId: 1,
+    username: 'anonymous'
+  };
+  
+  // Original WebSocket authentication code (commented out):
+  /*
   if (!token) {
     return null;
   }
@@ -69,6 +95,7 @@ const authenticateWebSocket = (token) => {
     console.error('WebSocket token verification error:', error);
     return null;
   }
+  */
 };
 
 export {

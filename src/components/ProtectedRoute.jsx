@@ -24,6 +24,14 @@ const LoadingScreen = () => (
 );
 
 const ProtectedRoute = ({ children }) => {
+  // ============================================
+  // AUTHENTICATION DISABLED
+  // ============================================
+  // Note: Authentication functionality is temporarily disabled
+  // All authentication-related code is preserved for future use
+  // To re-enable authentication, uncomment the code below:
+  
+  /*
   const { user, isLoading, needsSetup } = useAuth();
 
   if (isLoading) {
@@ -37,7 +45,9 @@ const ProtectedRoute = ({ children }) => {
   if (!user) {
     return <LoginForm />;
   }
+  */
 
+  // Skip all authentication checks and render children directly
   return children;
 };
 
