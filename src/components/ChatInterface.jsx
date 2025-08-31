@@ -26,6 +26,7 @@ import CursorLogo from './CursorLogo.jsx';
 import ClaudeStatus from './ClaudeStatus';
 import { MicButton } from './MicButton.jsx';
 import { api, authenticatedFetch } from '../utils/api';
+import { commandManager } from '../utils/claudeCommands';
 
 
 // Format "Claude AI usage limit reached|<epoch>" into a local time string
@@ -2472,6 +2473,39 @@ function ChatInterface({ selectedProject, selectedSession, ws, sendMessage, mess
     }
   }, [input, cursorPosition, fileList]);
 
+  // Handle / symbol detection and command filtering
+  useEffect(() => {
+    const textBeforeCursor = input.slice(0, cursorPosition);
+    
+    // Only detect slash at the beginning of input or after a space
+    const lastSlashIndex = textBeforeCursor.lastIndexOf('/');
+    const textBeforeSlash = textBeforeCursor.slice(0, lastSlashIndex);
+    const isValidSlashPosition = lastSlashIndex === 0 || 
+      (lastSlashIndex > 0 && textBeforeSlash.endsWith(' '));
+    
+    if (lastSlashIndex !== -1 && isValidSlashPosition) {
+      const textAfterSlash = textBeforeCursor.slice(lastSlashIndex + 1);
+      // Check if there's a space after the / symbol (which would end the command)
+      if (!textAfterSlash.includes(' ')) {
+        setSlashPosition(lastSlashIndex);
+        setShowCommandMenu(true);
+        
+        // Filter commands based on the text after /
+        const searchQuery = textAfterSlash.toLowerCase();
+        const filtered = commandManager.searchCommands(searchQuery, 8); // Limit to 8 results
+        
+        setFilteredCommands(filtered);
+        setSelectedCommandIndex(-1);
+      } else {
+        setShowCommandMenu(false);
+        setSlashPosition(-1);
+      }
+    } else {
+      setShowCommandMenu(false);
+      setSlashPosition(-1);
+    }
+  }, [input, cursorPosition]);
+
   // Debounced input handling
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -2843,9 +2877,41 @@ function ChatInterface({ selectedProject, selectedSession, ws, sendMessage, mess
         return;
       }
     }
+
+    // Handle command menu navigation
+    if (showCommandMenu && filteredCommands.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setSelectedCommandIndex(prev => 
+          prev < filteredCommands.length - 1 ? prev + 1 : 0
+        );
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setSelectedCommandIndex(prev => 
+          prev > 0 ? prev - 1 : filteredCommands.length - 1
+        );
+        return;
+      }
+      if (e.key === 'Tab' || e.key === 'Enter') {
+        e.preventDefault();
+        if (selectedCommandIndex >= 0) {
+          selectCommand(filteredCommands[selectedCommandIndex]);
+        } else if (filteredCommands.length > 0) {
+          selectCommand(filteredCommands[0]);
+        }
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setShowCommandMenu(false);
+        return;
+      }
+    }
     
-    // Handle Tab key for mode switching (only when file dropdown is not showing)
-    if (e.key === 'Tab' && !showFileDropdown) {
+    // Handle Tab key for mode switching (only when dropdowns are not showing)
+    if (e.key === 'Tab' && !showFileDropdown && !showCommandMenu) {
       e.preventDefault();
       const modes = ['default', 'acceptEdits', 'bypassPermissions', 'plan'];
       const currentIndex = modes.indexOf(permissionMode);
@@ -2897,6 +2963,44 @@ function ChatInterface({ selectedProject, selectedSession, ws, sendMessage, mess
     // Hide dropdown
     setShowFileDropdown(false);
     setAtSymbolPosition(-1);
+    
+    // Set cursor position synchronously 
+    if (textareaRef.current) {
+      // Use requestAnimationFrame for smoother updates
+      requestAnimationFrame(() => {
+        if (textareaRef.current) {
+          textareaRef.current.setSelectionRange(newCursorPos, newCursorPos);
+          // Ensure focus is maintained
+          if (!textareaRef.current.matches(':focus')) {
+            textareaRef.current.focus();
+          }
+        }
+      });
+    }
+  };
+
+  const selectCommand = (command) => {
+    const textBeforeSlash = input.slice(0, slashPosition);
+    const textAfterSlashQuery = input.slice(slashPosition);
+    const spaceIndex = textAfterSlashQuery.indexOf(' ');
+    const textAfterQuery = spaceIndex !== -1 ? textAfterSlashQuery.slice(spaceIndex) : '';
+    
+    // Use the command name (e.g., "/build") and add a space
+    const newInput = textBeforeSlash + command.name + ' ' + textAfterQuery.trimStart();
+    const newCursorPos = textBeforeSlash.length + command.name.length + 1;
+    
+    // Immediately ensure focus is maintained
+    if (textareaRef.current && !textareaRef.current.matches(':focus')) {
+      textareaRef.current.focus();
+    }
+    
+    // Update input and cursor position
+    setInput(newInput);
+    setCursorPosition(newCursorPos);
+    
+    // Hide dropdown
+    setShowCommandMenu(false);
+    setSlashPosition(-1);
     
     // Set cursor position synchronously 
     if (textareaRef.current) {
@@ -3314,6 +3418,90 @@ function ChatInterface({ selectedProject, selectedSession, ws, sendMessage, mess
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+          
+          {/* Command dropdown - positioned outside dropzone to avoid conflicts */}
+          {showCommandMenu && filteredCommands.length > 0 && (
+            <div className="absolute bottom-full left-0 right-0 mb-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-lg max-h-64 overflow-y-auto z-50 backdrop-blur-sm">
+              {filteredCommands.map((command, index) => (
+                <div
+                  key={command.id}
+                  className={`px-4 py-3 cursor-pointer border-b border-gray-100 dark:border-gray-700 last:border-b-0 touch-manipulation transition-colors ${
+                    index === selectedCommandIndex
+                      ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300'
+                      : 'hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300'
+                  }`}
+                  onMouseDown={(e) => {
+                    // Prevent textarea from losing focus on mobile
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    selectCommand(command);
+                  }}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-lg" role="img" aria-label="command icon">
+                      {command.icon || '⚡'}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-medium text-sm font-mono text-blue-600 dark:text-blue-400">
+                          {command.name}
+                        </span>
+                        <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${{
+                          'Development': 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
+                          'Analysis': 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
+                          'Quality': 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300',
+                          'Testing': 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300',
+                          'Documentation': 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300',
+                          'Planning': 'bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-300',
+                          'Version Control': 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-300',
+                          'Design': 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
+                          'Meta': 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300'
+                        }[command.category] || 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-300'}`}>
+                          {command.category}
+                        </span>
+                        {command.waveEnabled && (
+                          <span className="px-1.5 py-0.5 text-xs bg-gradient-to-r from-purple-100 to-blue-100 text-purple-700 dark:from-purple-900/30 dark:to-blue-900/30 dark:text-purple-300 rounded font-medium">
+                            🌊 Wave
+                          </span>
+                        )}
+                        {(command.isUserCommand || command.isProjectCommand) && (
+                          <span className="px-1.5 py-0.5 text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300 rounded font-medium">
+                            {command.isUserCommand ? '👤 User' : '📁 Project'}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">
+                        {command.description}
+                      </div>
+                      {command.examples && command.examples[0] && (
+                        <div className="text-xs text-gray-500 dark:text-gray-500 font-mono bg-gray-50 dark:bg-gray-900/50 px-2 py-1 rounded">
+                          {command.examples[0]}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+              
+              {/* Command menu footer with tips */}
+              <div className="px-4 py-2 bg-gray-50 dark:bg-gray-900/50 border-t border-gray-100 dark:border-gray-700">
+                <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+                  <div className="flex items-center gap-4">
+                    <span>↑↓ Navigate</span>
+                    <span>Tab/Enter Select</span>
+                    <span>Esc Cancel</span>
+                  </div>
+                  <div className="text-xs text-gray-400 dark:text-gray-500">
+                    {filteredCommands.length} commands
+                  </div>
+                </div>
+              </div>
             </div>
           )}
           

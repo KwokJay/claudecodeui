@@ -2,8 +2,9 @@ import { useState, useEffect } from 'react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Badge } from './ui/badge';
-import { X, Plus, Settings, Shield, AlertTriangle, Moon, Sun, Server, Edit3, Trash2, Globe, Terminal, Zap, FolderOpen } from 'lucide-react';
+import { X, Plus, Settings, Shield, AlertTriangle, Moon, Sun, Server, Edit3, Trash2, Globe, Terminal, Zap, FolderOpen, Hash } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
+import CommandManager from './CommandManager';
 
 function ToolsSettings({ isOpen, onClose, projects = [] }) {
   const { isDarkMode, toggleDarkMode } = useTheme();
@@ -42,6 +43,7 @@ function ToolsSettings({ isOpen, onClose, projects = [] }) {
   const [activeTab, setActiveTab] = useState('tools');
   const [jsonValidationError, setJsonValidationError] = useState('');
   const [toolsProvider, setToolsProvider] = useState('claude'); // 'claude' or 'cursor'
+  const [showCommandManager, setShowCommandManager] = useState(false);
   
   // Cursor-specific states
   const [cursorAllowedCommands, setCursorAllowedCommands] = useState([]);
@@ -619,6 +621,17 @@ function ToolsSettings({ isOpen, onClose, projects = [] }) {
                 }`}
               >
                 Tools
+              </button>
+              <button
+                onClick={() => setActiveTab('commands')}
+                className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                  activeTab === 'commands'
+                    ? 'border-blue-600 text-blue-600 dark:text-blue-400'
+                    : 'border-transparent text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <Hash className="w-4 h-4 mr-1 inline" />
+                Commands
               </button>
               <button
                 onClick={() => setActiveTab('appearance')}
@@ -1672,6 +1685,13 @@ function ToolsSettings({ isOpen, onClose, projects = [] }) {
                 </div>
               </div>
             )}
+              </div>
+            )}
+
+            {/* Commands Tab */}
+            {activeTab === 'commands' && (
+              <div className="space-y-6 md:space-y-8">
+                <CommandManager onClose={() => setShowCommandManager(false)} />
               </div>
             )}
           </div>

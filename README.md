@@ -42,7 +42,8 @@ A desktop and mobile UI for [Claude Code](https://docs.anthropic.com/en/docs/cla
 ## Features
 
 - **Responsive Design** - Works seamlessly across desktop, tablet, and mobile so you can also use Claude Code from mobile 
-- **Interactive Chat Interface** - Built-in chat interface for seamless communication with Claude Code or Cursor
+- **Interactive Chat Interface** - Built-in chat interface with Claude Code command support
+- **Claude Code Commands** - Full `/command` system with auto-completion and custom commands
 - **Integrated Shell Terminal** - Direct access to Claude Code or Cursor CLI through built-in shell functionality
 - **File Explorer** - Interactive file tree with syntax highlighting and live editing
 - **Git Explorer** - View, stage and commit your changes. You can also switch branches 
@@ -79,8 +80,11 @@ cp .env.example .env
 
 4. **Start the application:**
 ```bash
-# Development mode (with hot reload)
-npm run dev
+# Desktop app (recommended)
+npm run dev:electron
+
+# Web version (for browser testing)
+npm run dev:web
 
 ```
 The application will start at the port you specified in your .env
@@ -97,6 +101,7 @@ The application will start at the port you specified in your .env
 To use Claude Code's full functionality, you'll need to manually enable tools:
 
 1. **Open Tools Settings** - Click the gear icon in the sidebar
+2. **Configure Commands** - Use the Commands tab to manage custom `/` commands  
 3. **Enable Selectively** - Turn on only the tools you need
 4. **Apply Settings** - Your preferences are saved locally
 
@@ -121,6 +126,8 @@ The UI automatically discovers Claude Code projects from `~/.claude/projects/` a
 - **MCP support** - Add your own MCP servers through the UI 
 
 #### Chat Interface
+- **Claude Code Commands** - Type `/` to access full Claude Code command system with auto-completion
+- **Custom Commands** - Create user-level and project-level custom commands in Settings → Commands
 - **Use responsive chat or Claude Code/Cursor CLI** - You can either use the adapted chat interface or use the shell button to connect to your selected CLI. 
 - **Real-time Communication** - Stream responses from Claude with WebSocket connection
 - **Session Management** - Resume previous conversations or start fresh sessions
