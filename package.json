@@ -82,6 +82,7 @@
   "build": {
     "appId": "com.claudecodeui.desktop",
     "productName": "Claude Code UI Desktop",
+    "icon": "./public/app-icon-1024.png",
     "files": [
       "dist/**/*",
       "server/**/*",
