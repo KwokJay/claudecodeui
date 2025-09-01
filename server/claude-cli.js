@@ -25,9 +25,11 @@ async function spawnClaude(command, options = {}, ws) {
     // Build Claude CLI command - start with print/resume flags first
     const args = [];
     
-    // Add print flag with command if we have a command
-    if (command && command.trim()) {
-
+    // Check if this is a slash command (Claude's native commands)
+    const isSlashCommand = command && command.trim().startsWith('/');
+    
+    // Add print flag with command if we have a command and it's NOT a slash command
+    if (command && command.trim() && !isSlashCommand) {
       // Separate arguments for better cross-platform compatibility
       // This prevents issues with spaces and quotes on Windows
       args.push('--print');
@@ -66,8 +68,8 @@ async function spawnClaude(command, options = {}, ws) {
         }
         
         // Include the full image paths in the prompt for Claude to reference
-        // Only modify the command if we actually have images and a command
-        if (tempImagePaths.length > 0 && command && command.trim()) {
+        // Only modify the command if we actually have images and a command and it's NOT a slash command
+        if (tempImagePaths.length > 0 && command && command.trim() && !isSlashCommand) {
           const imageNote = `\n\n[Images provided at the following paths:]\n${tempImagePaths.map((p, i) => `${i + 1}. ${p}`).join('\n')}`;
           const modifiedCommand = command + imageNote;
           
@@ -84,8 +86,8 @@ async function spawnClaude(command, options = {}, ws) {
       }
     }
     
-    // Add resume flag if resuming
-    if (resume && sessionId) {
+    // Add resume flag if resuming (but not for slash commands to avoid session issues)
+    if (resume && sessionId && !isSlashCommand) {
       args.push('--resume', sessionId);
     }
     
@@ -170,8 +172,8 @@ async function spawnClaude(command, options = {}, ws) {
       console.log('Note: MCP config check failed, proceeding without MCP support');
     }
     
-    // Add model for new sessions
-    if (!resume) {
+    // Add model for new sessions (including slash commands which don't resume)
+    if (!resume || isSlashCommand) {
       args.push('--model', 'sonnet');
     }
     
@@ -232,8 +234,12 @@ async function spawnClaude(command, options = {}, ws) {
     }).join(' '));
     console.log('Working directory:', workingDir);
     console.log('Session info - Input sessionId:', sessionId, 'Resume:', resume);
+    console.log('🔍 Command type:', isSlashCommand ? 'Slash command (interactive)' : 'Regular text (--print)');
     console.log('🔍 Full command args:', JSON.stringify(args, null, 2));
     console.log('🔍 Final Claude command will be: claude ' + args.join(' '));
+    if (isSlashCommand) {
+      console.log('🔍 Slash command will be written to stdin:', command);
+    }
     
     const claudeProcess = spawnFunction('claude', args, {
       cwd: workingDir,
@@ -249,8 +255,71 @@ async function spawnClaude(command, options = {}, ws) {
     const processKey = capturedSessionId || sessionId || Date.now().toString();
     activeClaudeProcesses.set(processKey, claudeProcess);
     
+    // Set up timeout for unresponsive processes (2 minutes)
+    const timeoutId = setTimeout(() => {
+      console.warn(`⏰ Claude CLI process timeout after 2 minutes, terminating...`);
+      if (activeClaudeProcesses.has(processKey)) {
+        console.log(`🛑 Force killing unresponsive Claude process: ${processKey}`);
+        claudeProcess.kill('SIGKILL');
+        activeClaudeProcesses.delete(processKey);
+        
+        // Send timeout error to frontend
+        if (ws && ws.readyState === ws.OPEN) {
+          console.log(`📤 Sending timeout error to WebSocket`);
+          try {
+            ws.send(JSON.stringify({
+              type: 'claude-error',
+              error: 'Claude CLI process timeout. The command took too long to respond and was terminated.',
+              exitCode: 'TIMEOUT'
+            }));
+            console.log(`✅ Timeout error message sent`);
+          } catch (wsError) {
+            console.error(`❌ Failed to send timeout error:`, wsError);
+          }
+        }
+      }
+    }, 120000); // 2 minutes timeout
+    
+    // Store timeout ID for cleanup
+    claudeProcess.timeoutId = timeoutId;
+    
+    // Add a shorter timeout for initial response (10 seconds)
+    let hasReceivedOutput = false;
+    const initialResponseTimeout = setTimeout(() => {
+      if (!hasReceivedOutput) {
+        console.warn(`⚠️ No output received within 10 seconds, likely session resume failed`);
+        console.log(`🔄 Attempting to kill process and retry with new session...`);
+        
+        // Kill the unresponsive process
+        claudeProcess.kill('SIGTERM');
+        
+        // Send error message suggesting new session
+        if (ws && ws.readyState === ws.OPEN) {
+          try {
+            ws.send(JSON.stringify({
+              type: 'claude-error',
+              error: 'Claude session may be expired. Please try starting a new conversation.',
+              exitCode: 'SESSION_TIMEOUT'
+            }));
+            console.log(`✅ Session timeout error sent`);
+          } catch (wsError) {
+            console.error(`❌ Failed to send session timeout error:`, wsError);
+          }
+        }
+      }
+    }, 10000); // 10 seconds timeout for initial response
+    
+    claudeProcess.initialResponseTimeout = initialResponseTimeout;
+    
     // Handle stdout (streaming JSON responses)
     claudeProcess.stdout.on('data', (data) => {
+      hasReceivedOutput = true;
+      // Clear the initial response timeout since we got output
+      if (claudeProcess.initialResponseTimeout) {
+        clearTimeout(claudeProcess.initialResponseTimeout);
+        claudeProcess.initialResponseTimeout = null;
+        console.log('✅ Received initial output, cleared initial timeout');
+      }
       const rawOutput = data.toString();
       console.log('📤 Claude CLI stdout:', rawOutput);
       
@@ -311,15 +380,47 @@ async function spawnClaude(command, options = {}, ws) {
     claudeProcess.on('close', async (code) => {
       console.log(`Claude CLI process exited with code ${code}`);
       
+      // Clear timeouts if process completes normally
+      if (claudeProcess.timeoutId) {
+        clearTimeout(claudeProcess.timeoutId);
+        console.log(`🧹 Cleared main timeout for process: ${processKey}`);
+      }
+      if (claudeProcess.initialResponseTimeout) {
+        clearTimeout(claudeProcess.initialResponseTimeout);
+        console.log(`🧹 Cleared initial response timeout for process: ${processKey}`);
+      }
+      
       // Clean up process reference
       const finalSessionId = capturedSessionId || sessionId || processKey;
       activeClaudeProcesses.delete(finalSessionId);
       
-      ws.send(JSON.stringify({
-        type: 'claude-complete',
-        exitCode: code,
-        isNewSession: !sessionId && !!command // Flag to indicate this was a new session
-      }));
+      // Send appropriate message based on exit code
+      if (code !== 0) {
+        // Process failed - send error message
+        console.error(`❌ Chat WebSocket error: Claude CLI exited with code ${code}`);
+        console.log(`📤 Sending claude-error message to WebSocket (state: ${ws.readyState})`);
+        if (ws.readyState === ws.OPEN) {
+          try {
+            ws.send(JSON.stringify({
+              type: 'claude-error',
+              error: `Claude CLI process failed with exit code ${code}. Please try again or check your command.`,
+              exitCode: code
+            }));
+            console.log(`✅ claude-error message sent successfully`);
+          } catch (wsError) {
+            console.error(`❌ Failed to send claude-error message:`, wsError);
+          }
+        } else {
+          console.error(`❌ Cannot send claude-error: WebSocket not open (state: ${ws.readyState})`);
+        }
+      } else {
+        // Process succeeded - send completion message  
+        ws.send(JSON.stringify({
+          type: 'claude-complete',
+          exitCode: code,
+          isNewSession: !sessionId && !!command // Flag to indicate this was a new session
+        }));
+      }
       
       // Clean up temporary image files if any
       if (claudeProcess.tempImagePaths && claudeProcess.tempImagePaths.length > 0) {
@@ -346,6 +447,16 @@ async function spawnClaude(command, options = {}, ws) {
     claudeProcess.on('error', (error) => {
       console.error('Claude CLI process error:', error);
       
+      // Clear timeouts on error
+      if (claudeProcess.timeoutId) {
+        clearTimeout(claudeProcess.timeoutId);
+        console.log(`🧹 Cleared main timeout due to process error: ${processKey}`);
+      }
+      if (claudeProcess.initialResponseTimeout) {
+        clearTimeout(claudeProcess.initialResponseTimeout);
+        console.log(`🧹 Cleared initial response timeout due to process error: ${processKey}`);
+      }
+      
       // Clean up process reference on error
       const finalSessionId = capturedSessionId || sessionId || processKey;
       activeClaudeProcesses.delete(finalSessionId);
@@ -359,16 +470,16 @@ async function spawnClaude(command, options = {}, ws) {
     });
     
     // Handle stdin for interactive mode
-    if (command) {
+    if (command && !isSlashCommand) {
       // For --print mode with arguments, we don't need to write to stdin
       claudeProcess.stdin.end();
+    } else if (command && isSlashCommand) {
+      // For slash commands, write to stdin in interactive mode
+      console.log('📝 Writing slash command to stdin:', command);
+      claudeProcess.stdin.write(command + '\n');
+      claudeProcess.stdin.end();
     } else {
-      // For interactive mode, we need to write the command to stdin if provided later
-      // Keep stdin open for interactive session
-      if (command !== undefined) {
-        claudeProcess.stdin.write(command + '\n');
-        claudeProcess.stdin.end();
-      }
+      // For interactive mode without command, keep stdin open
       // If no command provided, stdin stays open for interactive use
     }
   });

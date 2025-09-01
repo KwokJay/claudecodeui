@@ -2167,11 +2167,47 @@ function ChatInterface({ selectedProject, selectedSession, ws, sendMessage, mess
           break;
 
         case 'claude-error':
-          setChatMessages(prev => [...prev, {
-            type: 'error',
-            content: `Error: ${latestMessage.error}`,
-            timestamp: new Date()
-          }]);
+          // Clear loading state when Claude CLI fails
+          setIsLoading(false);
+          setCanAbortSession(false);
+          setClaudeStatus(null);
+          
+          // Session Protection: Mark session as inactive when error occurs
+          // Error state ends the conversation, re-enable project updates
+          const errorSessionId = currentSessionId || sessionStorage.getItem('pendingSessionId');
+          if (errorSessionId && onSessionInactive) {
+            onSessionInactive(errorSessionId);
+            sessionStorage.removeItem('pendingSessionId');
+          }
+          
+          // Handle session timeout - automatically retry with new session
+          if (latestMessage.exitCode === 'SESSION_TIMEOUT') {
+            console.log('🔄 Session timeout detected, clearing session and retrying...');
+            // Clear the current session to force a new one
+            setCurrentSessionId(null);
+            
+            // Add a message explaining what happened
+            setChatMessages(prev => [...prev, {
+              type: 'assistant',
+              content: 'Session expired, starting a new conversation...',
+              timestamp: new Date()
+            }]);
+            
+            // Retry the last command with a new session after a short delay
+            setTimeout(() => {
+              console.log('🔄 Retrying with new session...');
+              if (input.trim()) {
+                handleSubmit(null, true); // Pass skipInputClear=true to retry current input
+              }
+            }, 1000);
+          } else {
+            // Regular error handling
+            setChatMessages(prev => [...prev, {
+              type: 'error',
+              content: `Error: ${latestMessage.error}`,
+              timestamp: new Date()
+            }]);
+          }
           break;
           
         case 'cursor-system':
@@ -2727,8 +2763,8 @@ function ChatInterface({ selectedProject, selectedSession, ws, sendMessage, mess
     noKeyboard: true
   });
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleSubmit = async (e, skipInputClear = false) => {
+    e?.preventDefault();
     if (!input.trim() || isLoading || !selectedProject) return;
 
     // Upload images first if any
@@ -2855,11 +2891,14 @@ function ChatInterface({ selectedProject, selectedSession, ws, sendMessage, mess
       });
     }
 
-    setInput('');
-    setAttachedImages([]);
-    setUploadingImages(new Map());
-    setImageErrors(new Map());
-    setIsTextareaExpanded(false);
+    // Clear input only if not retrying
+    if (!skipInputClear) {
+      setInput('');
+      setAttachedImages([]);
+      setUploadingImages(new Map());
+      setImageErrors(new Map());
+      setIsTextareaExpanded(false);
+    }
     
     // Reset textarea height
 
