@@ -28,6 +28,84 @@ import { MicButton } from './MicButton.jsx';
 import { api, authenticatedFetch } from '../utils/api';
 import { commandManager } from '../utils/claudeCommands';
 
+// TypewriterText Component - Renders text with typewriter effect for streaming content
+const TypewriterText = memo(({ text, speed = 30, className = "" }) => {
+  const [displayedText, setDisplayedText] = useState('');
+  const [isTyping, setIsTyping] = useState(false);
+  const intervalRef = useRef(null);
+  const targetTextRef = useRef('');
+  const currentIndexRef = useRef(0);
+
+  useEffect(() => {
+    if (!text) {
+      setDisplayedText('');
+      setIsTyping(false);
+      currentIndexRef.current = 0;
+      targetTextRef.current = '';
+      return;
+    }
+
+    // Update target text
+    targetTextRef.current = text;
+
+    // If we're not currently typing and there's new content, start typing
+    if (!intervalRef.current && text.length > displayedText.length) {
+      setIsTyping(true);
+      
+      intervalRef.current = setInterval(() => {
+        setDisplayedText(currentDisplay => {
+          const targetLength = targetTextRef.current.length;
+          const nextIndex = currentIndexRef.current + 1;
+          
+          if (nextIndex >= targetLength) {
+            // Animation complete
+            setIsTyping(false);
+            if (intervalRef.current) {
+              clearInterval(intervalRef.current);
+              intervalRef.current = null;
+            }
+            currentIndexRef.current = targetLength;
+            return targetTextRef.current;
+          }
+          
+          currentIndexRef.current = nextIndex;
+          return targetTextRef.current.slice(0, nextIndex);
+        });
+      }, speed);
+    } else if (intervalRef.current && text.length > displayedText.length) {
+      // If we're already typing but got more content, just update the target
+      // The interval will continue and catch up
+    }
+
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+        setIsTyping(false);
+      }
+    };
+  }, [text, speed]);
+
+  // Clean up on unmount
+  useEffect(() => {
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+  }, []);
+
+  return (
+    <div className={className}>
+      <ReactMarkdown>{displayedText}</ReactMarkdown>
+      {isTyping && (
+        <span className="inline-block animate-pulse text-blue-500 ml-1">▊</span>
+      )}
+    </div>
+  );
+});
+
 
 // Format "Claude AI usage limit reached|<epoch>" into a local time string
 function formatUsageLimitText(text) {
@@ -1063,43 +1141,53 @@ const MessageComponent = memo(({ message, index, prevMessage, createDiff, onFile
                   </details>
                 )}
                 
-                {message.type === 'assistant' ? (
-                  <div className="prose prose-sm max-w-none dark:prose-invert prose-gray [&_code]:!bg-transparent [&_code]:!p-0 [&_pre]:!bg-transparent [&_pre]:!border-0 [&_pre]:!p-0">
-                    <ReactMarkdown
-                      components={{
-                        code: ({node, inline, className, children, ...props}) => {
-                          return inline ? (
-                            <strong className="text-blue-600 dark:text-blue-400 font-bold not-prose" {...props}>
-                              {children}
-                            </strong>
-                          ) : (
-                            <div className="bg-gray-800 dark:bg-gray-800 border border-gray-600/30 dark:border-gray-600/30 p-3 rounded-lg overflow-hidden my-2">
-                              <code className="text-gray-100 dark:text-gray-200 text-sm font-mono block whitespace-pre-wrap break-words" {...props}>
+{message.type === 'assistant' ? (
+                  message.useTypewriter && message.isStreaming ? (
+                    // Use TypewriterText for streaming messages
+                    <TypewriterText 
+                      text={formatUsageLimitText(String(message.content || ''))} 
+                      speed={20} // 20ms per character for smooth typing
+                      className="prose prose-sm max-w-none dark:prose-invert prose-gray [&_code]:!bg-transparent [&_code]:!p-0 [&_pre]:!bg-transparent [&_pre]:!border-0 [&_pre]:!p-0"
+                    />
+                  ) : (
+                    // Use normal ReactMarkdown for completed messages
+                    <div className="prose prose-sm max-w-none dark:prose-invert prose-gray [&_code]:!bg-transparent [&_code]:!p-0 [&_pre]:!bg-transparent [&_pre]:!border-0 [&_pre]:!p-0">
+                      <ReactMarkdown
+                        components={{
+                          code: ({node, inline, className, children, ...props}) => {
+                            return inline ? (
+                              <strong className="text-blue-600 dark:text-blue-400 font-bold not-prose" {...props}>
                                 {children}
-                              </code>
+                              </strong>
+                            ) : (
+                              <div className="bg-gray-800 dark:bg-gray-800 border border-gray-600/30 dark:border-gray-600/30 p-3 rounded-lg overflow-hidden my-2">
+                                <code className="text-gray-100 dark:text-gray-200 text-sm font-mono block whitespace-pre-wrap break-words" {...props}>
+                                  {children}
+                                </code>
+                              </div>
+                            );
+                          },
+                          blockquote: ({children}) => (
+                            <blockquote className="border-l-4 border-gray-300 dark:border-gray-600 pl-4 italic text-gray-600 dark:text-gray-400 my-2">
+                              {children}
+                            </blockquote>
+                          ),
+                          a: ({href, children}) => (
+                            <a href={href} className="text-blue-600 dark:text-blue-400 hover:underline" target="_blank" rel="noopener noreferrer">
+                              {children}
+                            </a>
+                          ),
+                          p: ({children}) => (
+                            <div className="mb-2 last:mb-0">
+                              {children}
                             </div>
-                          );
-                        },
-                        blockquote: ({children}) => (
-                          <blockquote className="border-l-4 border-gray-300 dark:border-gray-600 pl-4 italic text-gray-600 dark:text-gray-400 my-2">
-                            {children}
-                          </blockquote>
-                        ),
-                        a: ({href, children}) => (
-                          <a href={href} className="text-blue-600 dark:text-blue-400 hover:underline" target="_blank" rel="noopener noreferrer">
-                            {children}
-                          </a>
-                        ),
-                        p: ({children}) => (
-                          <div className="mb-2 last:mb-0">
-                            {children}
-                          </div>
-                        )
-                      }}
-                    >
-                      {formatUsageLimitText(String(message.content || ''))}
-                    </ReactMarkdown>
-                  </div>
+                          )
+                        }}
+                      >
+                        {formatUsageLimitText(String(message.content || ''))}
+                      </ReactMarkdown>
+                    </div>
+                  )
                 ) : (
                   <div className="whitespace-pre-wrap">
                     {formatUsageLimitText(String(message.content || ''))}
@@ -1198,6 +1286,7 @@ function ChatInterface({ selectedProject, selectedSession, ws, sendMessage, mess
   // Streaming throttle buffers
   const streamBufferRef = useRef('');
   const streamTimerRef = useRef(null);
+  const typewriterQueueRef = useRef([]);
   const [debouncedInput, setDebouncedInput] = useState('');
   const [showFileDropdown, setShowFileDropdown] = useState(false);
   const [fileList, setFileList] = useState([]);
@@ -1216,6 +1305,8 @@ function ChatInterface({ selectedProject, selectedSession, ws, sendMessage, mess
   const [slashPosition, setSlashPosition] = useState(-1);
   const [visibleMessageCount, setVisibleMessageCount] = useState(100);
   const [claudeStatus, setClaudeStatus] = useState(null);
+  const [processOutput, setProcessOutput] = useState([]);
+  const [showProcessOutput, setShowProcessOutput] = useState(false);
   const [provider, setProvider] = useState(() => {
     return localStorage.getItem('selected-provider') || 'claude';
   });
@@ -1957,53 +2048,35 @@ function ChatInterface({ selectedProject, selectedSession, ws, sendMessage, mess
           // Handle Cursor streaming format (content_block_delta / content_block_stop)
           if (messageData && typeof messageData === 'object' && messageData.type) {
             if (messageData.type === 'content_block_delta' && messageData.delta?.text) {
-              // Buffer deltas and flush periodically to reduce rerenders
-              streamBufferRef.current += messageData.delta.text;
-              if (!streamTimerRef.current) {
-                streamTimerRef.current = setTimeout(() => {
-                  const chunk = streamBufferRef.current;
-                  streamBufferRef.current = '';
-                  streamTimerRef.current = null;
-                  if (!chunk) return;
-                  setChatMessages(prev => {
-                    const updated = [...prev];
-                    const last = updated[updated.length - 1];
-                    if (last && last.type === 'assistant' && !last.isToolUse && last.isStreaming) {
-                      last.content = (last.content || '') + chunk;
-                    } else {
-                      updated.push({ type: 'assistant', content: chunk, timestamp: new Date(), isStreaming: true });
-                    }
-                    return updated;
+              // Immediately process streaming content for smooth typewriter effect
+              const chunk = messageData.delta.text;
+              setChatMessages(prev => {
+                const updated = [...prev];
+                const last = updated[updated.length - 1];
+                if (last && last.type === 'assistant' && !last.isToolUse && last.isStreaming) {
+                  last.content = (last.content || '') + chunk;
+                  last.timestamp = new Date(); // Update timestamp for latest content
+                } else {
+                  updated.push({ 
+                    type: 'assistant', 
+                    content: chunk, 
+                    timestamp: new Date(), 
+                    isStreaming: true,
+                    useTypewriter: true // Enable typewriter effect for smooth rendering
                   });
-                }, 100);
-              }
+                }
+                return updated;
+              });
               return;
             }
             if (messageData.type === 'content_block_stop') {
-              // Flush any buffered text and mark streaming message complete
-              if (streamTimerRef.current) {
-                clearTimeout(streamTimerRef.current);
-                streamTimerRef.current = null;
-              }
-              const chunk = streamBufferRef.current;
-              streamBufferRef.current = '';
-              if (chunk) {
-                setChatMessages(prev => {
-                  const updated = [...prev];
-                  const last = updated[updated.length - 1];
-                  if (last && last.type === 'assistant' && !last.isToolUse && last.isStreaming) {
-                    last.content = (last.content || '') + chunk;
-                  } else {
-                    updated.push({ type: 'assistant', content: chunk, timestamp: new Date(), isStreaming: true });
-                  }
-                  return updated;
-                });
-              }
+              // Mark streaming message as complete
               setChatMessages(prev => {
                 const updated = [...prev];
                 const last = updated[updated.length - 1];
                 if (last && last.type === 'assistant' && last.isStreaming) {
                   last.isStreaming = false;
+                  last.useTypewriter = false; // Disable typewriter for complete messages
                 }
                 return updated;
               });
@@ -2133,26 +2206,28 @@ function ChatInterface({ selectedProject, selectedSession, ws, sendMessage, mess
         case 'claude-output':
           {
             const cleaned = String(latestMessage.data || '');
-            if (cleaned.trim()) {
-              streamBufferRef.current += (streamBufferRef.current ? `\n${cleaned}` : cleaned);
-              if (!streamTimerRef.current) {
-                streamTimerRef.current = setTimeout(() => {
-                  const chunk = streamBufferRef.current;
-                  streamBufferRef.current = '';
-                  streamTimerRef.current = null;
-                  if (!chunk) return;
-                  setChatMessages(prev => {
-                    const updated = [...prev];
-                    const last = updated[updated.length - 1];
-                    if (last && last.type === 'assistant' && !last.isToolUse && last.isStreaming) {
-                      last.content = last.content ? `${last.content}\n${chunk}` : chunk;
-                    } else {
-                      updated.push({ type: 'assistant', content: chunk, timestamp: new Date(), isStreaming: true });
-                    }
-                    return updated;
+            if (cleaned) {
+              // Immediately process the chunk without delay
+              setChatMessages(prev => {
+                const updated = [...prev];
+                const last = updated[updated.length - 1];
+                
+                if (last && last.type === 'assistant' && !last.isToolUse && last.isStreaming) {
+                  // Append to existing streaming message without separator
+                  last.content = (last.content || '') + cleaned;
+                  last.timestamp = new Date(); // Update timestamp for latest content
+                } else {
+                  // Create new streaming message only if there's no existing streaming message
+                  updated.push({ 
+                    type: 'assistant', 
+                    content: cleaned, 
+                    timestamp: new Date(), 
+                    isStreaming: true,
+                    useTypewriter: true // Flag to enable typewriter effect
                   });
-                }, 100);
-              }
+                }
+                return updated;
+              });
             }
           }
           break;
@@ -2171,6 +2246,7 @@ function ChatInterface({ selectedProject, selectedSession, ws, sendMessage, mess
           setIsLoading(false);
           setCanAbortSession(false);
           setClaudeStatus(null);
+          setShowProcessOutput(false);
           
           // Session Protection: Mark session as inactive when error occurs
           // Error state ends the conversation, re-enable project updates
@@ -2287,12 +2363,21 @@ function ChatInterface({ selectedProject, selectedSession, ws, sendMessage, mess
               // Try to consolidate into the last streaming assistant message
               const last = updated[updated.length - 1];
               if (last && last.type === 'assistant' && !last.isToolUse && last.isStreaming) {
-                // Replace streaming content with the final content so deltas don't remain
-                const finalContent = textResult && textResult.trim() ? textResult : (last.content || '') + (pendingChunk || '');
-                last.content = finalContent;
+                // Mark streaming as complete
                 last.isStreaming = false;
+                last.useTypewriter = false; // Disable typewriter for complete messages
+                // Only update content if we have new textResult
+                if (textResult && textResult.trim()) {
+                  last.content = textResult;
+                }
               } else if (textResult && textResult.trim()) {
-                updated.push({ type: r.is_error ? 'error' : 'assistant', content: textResult, timestamp: new Date(), isStreaming: false });
+                updated.push({ 
+                  type: r.is_error ? 'error' : 'assistant', 
+                  content: textResult, 
+                  timestamp: new Date(), 
+                  isStreaming: false,
+                  useTypewriter: false
+                });
               }
               return updated;
             });
@@ -2322,27 +2407,28 @@ function ChatInterface({ selectedProject, selectedSession, ws, sendMessage, mess
           // Handle Cursor raw terminal output; strip ANSI and ignore empty control-only payloads
           try {
             const raw = String(latestMessage.data ?? '');
-            const cleaned = raw.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '').trim();
+            const cleaned = raw.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
             if (cleaned) {
-              streamBufferRef.current += (streamBufferRef.current ? `\n${cleaned}` : cleaned);
-              if (!streamTimerRef.current) {
-                streamTimerRef.current = setTimeout(() => {
-                  const chunk = streamBufferRef.current;
-                  streamBufferRef.current = '';
-                  streamTimerRef.current = null;
-                  if (!chunk) return;
-                  setChatMessages(prev => {
-                    const updated = [...prev];
-                    const last = updated[updated.length - 1];
-                    if (last && last.type === 'assistant' && !last.isToolUse && last.isStreaming) {
-                      last.content = last.content ? `${last.content}\n${chunk}` : chunk;
-                    } else {
-                      updated.push({ type: 'assistant', content: chunk, timestamp: new Date(), isStreaming: true });
-                    }
-                    return updated;
+              // Immediately process the chunk without delay
+              setChatMessages(prev => {
+                const updated = [...prev];
+                const last = updated[updated.length - 1];
+                if (last && last.type === 'assistant' && !last.isToolUse && last.isStreaming) {
+                  // Append to existing streaming message without separator
+                  last.content = (last.content || '') + cleaned;
+                  last.timestamp = new Date(); // Update timestamp for latest content
+                } else {
+                  // Create new streaming message only if there's no existing streaming message
+                  updated.push({ 
+                    type: 'assistant', 
+                    content: cleaned, 
+                    timestamp: new Date(), 
+                    isStreaming: true,
+                    useTypewriter: true // Flag to enable typewriter effect
                   });
-                }, 100);
-              }
+                }
+                return updated;
+              });
             }
           } catch (e) {
             console.warn('Error handling cursor-output message:', e);
@@ -2353,6 +2439,18 @@ function ChatInterface({ selectedProject, selectedSession, ws, sendMessage, mess
           setIsLoading(false);
           setCanAbortSession(false);
           setClaudeStatus(null);
+          setShowProcessOutput(false);
+          
+          // Mark any streaming messages as complete
+          setChatMessages(prev => {
+            const updated = [...prev];
+            const last = updated[updated.length - 1];
+            if (last && last.type === 'assistant' && last.isStreaming) {
+              last.isStreaming = false;
+              last.useTypewriter = false; // Disable typewriter for complete messages
+            }
+            return updated;
+          });
 
           
           // Session Protection: Mark session as inactive to re-enable automatic project updates
@@ -2435,6 +2533,26 @@ function ChatInterface({ selectedProject, selectedSession, ws, sendMessage, mess
             setIsLoading(true);
             setCanAbortSession(statusInfo.can_interrupt);
           }
+          break;
+          
+        case 'claude-process-start':
+          setProcessOutput([]);
+          setShowProcessOutput(true);
+          setProcessOutput(prev => [...prev, {
+            type: 'start',
+            content: `🚀 Starting Claude CLI process...`,
+            command: latestMessage.data.command,
+            workingDir: latestMessage.data.workingDir,
+            timestamp: new Date().toISOString()
+          }]);
+          break;
+          
+        case 'claude-process-output':
+          setProcessOutput(prev => [...prev, {
+            type: latestMessage.data.type,
+            content: latestMessage.data.content,
+            timestamp: latestMessage.data.timestamp
+          }]);
           break;
   
       }
@@ -3409,6 +3527,40 @@ function ChatInterface({ selectedProject, selectedSession, ws, sendMessage, mess
                 </div>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Process Output Display */}
+        {showProcessOutput && processOutput.length > 0 && (
+          <div className="mx-2 sm:mx-4 md:mx-6 mb-4">
+            <details open className="bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-3">
+              <summary className="cursor-pointer text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                🔧 Process Output ({processOutput.length} entries)
+              </summary>
+              <div className="bg-black text-green-400 font-mono text-xs p-3 rounded max-h-60 overflow-y-auto">
+                {processOutput.map((output, index) => (
+                  <div key={index} className="mb-1">
+                    <span className="text-gray-500">[{new Date(output.timestamp).toLocaleTimeString()}]</span>
+                    {output.type === 'start' && (
+                      <div>
+                        <div className="text-cyan-400">{output.content}</div>
+                        <div className="text-yellow-400 ml-2">Command: {output.command}</div>
+                        <div className="text-yellow-400 ml-2">Working Dir: {output.workingDir}</div>
+                      </div>
+                    )}
+                    {output.type === 'stderr' && (
+                      <div className="text-red-400 ml-2">stderr: {output.content.trim()}</div>
+                    )}
+                    {output.type === 'stdout' && (
+                      <div className="text-green-400 ml-2">stdout: {output.content.trim()}</div>
+                    )}
+                    {output.type === 'info' && (
+                      <div className="text-blue-400 ml-2">info: {output.content.trim()}</div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </details>
           </div>
         )}
         
