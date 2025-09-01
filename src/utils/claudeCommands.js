@@ -3,6 +3,65 @@
  * 基于SuperClaude框架的命令定义和管理
  */
 
+// Claude Code CLI 原生命令
+export const CLAUDE_NATIVE_COMMANDS = [
+  {
+    id: 'mcp',
+    name: '/mcp',
+    category: 'Native CLI',
+    description: 'Claude Code MCP服务器管理',
+    purpose: 'MCP server management',
+    icon: '🔌',
+    examples: ['/mcp list', '/mcp status'],
+    flags: ['list', 'status', 'restart'],
+    isNativeCommand: true
+  },
+  {
+    id: 'session',
+    name: '/session',
+    category: 'Native CLI',
+    description: 'Claude Code会话管理',
+    purpose: 'Session management',
+    icon: '💬',
+    examples: ['/session list', '/session resume <id>'],
+    flags: ['list', 'resume', 'delete'],
+    isNativeCommand: true
+  },
+  {
+    id: 'help',
+    name: '/help',
+    category: 'Native CLI',
+    description: 'Claude Code帮助信息',
+    purpose: 'CLI help information',
+    icon: '❓',
+    examples: ['/help', '/help commands'],
+    flags: ['commands', 'flags'],
+    isNativeCommand: true
+  },
+  {
+    id: 'login',
+    name: '/login',
+    category: 'Native CLI',
+    description: 'Claude Code用户登录',
+    purpose: 'User authentication',
+    icon: '🔐',
+    examples: ['/login'],
+    flags: [],
+    isNativeCommand: true
+  },
+  {
+    id: 'logout',
+    name: '/logout',
+    category: 'Native CLI',
+    description: 'Claude Code用户登出',
+    purpose: 'User logout',
+    icon: '🚪',
+    examples: ['/logout'],
+    flags: [],
+    isNativeCommand: true
+  }
+];
+
 // 核心Claude Code命令定义
 export const CLAUDE_COMMANDS = [
   // 开发命令
@@ -48,7 +107,7 @@ export const CLAUDE_COMMANDS = [
     id: 'troubleshoot',
     name: '/troubleshoot',
     category: 'Analysis',
-    description: '问题调查和故障排除',
+    description: '问题调查和故障排除 (使用 /troubleshoot 触发)',
     purpose: 'Problem investigation and troubleshooting',
     icon: '🚨',
     examples: ['/troubleshoot login error', '/troubleshoot --focus network'],
@@ -59,7 +118,7 @@ export const CLAUDE_COMMANDS = [
     id: 'explain',
     name: '/explain',
     category: 'Analysis',
-    description: '教育性解释和说明',
+    description: '教育性解释和说明 (使用 /explain 触发)',
     purpose: 'Educational explanations',
     icon: '💡',
     examples: ['/explain React hooks', '/explain @src/auth.js'],
@@ -72,7 +131,7 @@ export const CLAUDE_COMMANDS = [
     id: 'improve',
     name: '/improve',
     category: 'Quality',
-    description: '基于证据的代码增强',
+    description: '基于证据的代码增强 (使用 /improve 触发)',
     purpose: 'Evidence-based code enhancement',
     icon: '📈',
     examples: ['/improve performance', '/improve @src/api --focus security'],
@@ -84,7 +143,7 @@ export const CLAUDE_COMMANDS = [
     id: 'cleanup',
     name: '/cleanup',
     category: 'Quality',
-    description: '项目清理和技术债务减少',
+    description: '项目清理和技术债务减少 (使用 /cleanup 触发)',
     purpose: 'Project cleanup and technical debt reduction',
     icon: '🧹',
     examples: ['/cleanup unused', '/cleanup @src/legacy'],
@@ -97,7 +156,7 @@ export const CLAUDE_COMMANDS = [
     id: 'test',
     name: '/test',
     category: 'Testing',
-    description: '测试工作流',
+    description: '测试工作流 (使用 /test 触发)',
     purpose: 'Testing workflows',
     icon: '🧪',
     examples: ['/test unit', '/test e2e --browser chrome'],
@@ -110,7 +169,7 @@ export const CLAUDE_COMMANDS = [
     id: 'document',
     name: '/document',
     category: 'Documentation',
-    description: '文档生成',
+    description: '文档生成 (使用 /document 触发)',
     purpose: 'Documentation generation',
     icon: '📚',
     examples: ['/document API', '/document @src/components'],
@@ -123,7 +182,7 @@ export const CLAUDE_COMMANDS = [
     id: 'estimate',
     name: '/estimate',
     category: 'Planning',
-    description: '基于证据的估算',
+    description: '基于证据的估算 (使用 /estimate 触发)',
     purpose: 'Evidence-based estimation',
     icon: '⏱️',
     examples: ['/estimate new feature', '/estimate @src/refactor'],
@@ -134,7 +193,7 @@ export const CLAUDE_COMMANDS = [
     id: 'task',
     name: '/task',
     category: 'Planning',
-    description: '长期项目管理',
+    description: '长期项目管理 (使用 /task 触发)',
     purpose: 'Long-term project management',
     icon: '📋',
     examples: ['/task create "User authentication"', '/task list'],
@@ -148,7 +207,7 @@ export const CLAUDE_COMMANDS = [
     id: 'git',
     name: '/git',
     category: 'Version Control',
-    description: 'Git工作流助手',
+    description: 'Git工作流助手 (使用 /git 触发)',
     purpose: 'Git workflow assistant',
     icon: '🌿',
     examples: ['/git commit', '/git merge --branch feature'],
@@ -161,7 +220,7 @@ export const CLAUDE_COMMANDS = [
     id: 'design',
     name: '/design',
     category: 'Design',
-    description: '设计编排',
+    description: '设计编排 (使用 /design 触发)',
     purpose: 'Design orchestration',
     icon: '🎨',
     examples: ['/design UI mockup', '/design architecture --system'],
@@ -175,7 +234,7 @@ export const CLAUDE_COMMANDS = [
     id: 'index',
     name: '/index',
     category: 'Meta',
-    description: '命令目录浏览',
+    description: '命令目录浏览 (使用 /index 触发)',
     purpose: 'Command catalog browsing',
     icon: '🗂️',
     examples: ['/index search', '/index --category Development'],
@@ -186,7 +245,7 @@ export const CLAUDE_COMMANDS = [
     id: 'load',
     name: '/load',
     category: 'Meta',
-    description: '项目上下文加载',
+    description: '项目上下文加载 (使用 /load 触发)',
     purpose: 'Project context loading',
     icon: '📂',
     examples: ['/load @project', '/load --recursive'],
@@ -233,9 +292,33 @@ export const COMMON_FLAGS = {
  */
 export class CommandManager {
   constructor() {
-    this.commands = [...CLAUDE_COMMANDS];
+    this.commands = [...CLAUDE_NATIVE_COMMANDS, ...CLAUDE_COMMANDS];
     this.userCommands = this.loadUserCommands();
     this.projectCommands = this.loadProjectCommands();
+    this.fileCommands = { user: [], project: [] }; // .claude/commands 文件中的命令
+  }
+
+  /**
+   * 从API加载文件命令
+   */
+  async loadFileCommands(projectName = null) {
+    try {
+      const url = projectName ? `/api/commands?projectName=${encodeURIComponent(projectName)}` : '/api/commands';
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      
+      if (response.ok) {
+        const commands = await response.json();
+        this.fileCommands.user = commands.user || [];
+        this.fileCommands.project = commands.project || [];
+        console.log('Loaded file commands:', this.fileCommands);
+      }
+    } catch (error) {
+      console.warn('Failed to load file commands:', error);
+    }
   }
 
   /**
@@ -245,7 +328,9 @@ export class CommandManager {
     return [
       ...this.commands,
       ...this.userCommands,
-      ...this.projectCommands
+      ...this.projectCommands,
+      ...this.fileCommands.user,
+      ...this.fileCommands.project
     ];
   }
 
@@ -259,7 +344,7 @@ export class CommandManager {
   /**
    * 搜索命令
    */
-  searchCommands(query, limit = 10) {
+  searchCommands(query, limit = 50) {
     if (!query || query.startsWith('/')) {
       return this.getAllCommands().slice(0, limit);
     }

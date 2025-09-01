@@ -2,7 +2,6 @@
 import { app, BrowserWindow, shell } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { startServer } from '../server/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -12,6 +11,7 @@ let mainWindow = null;
 let serverPort = null;
 
 async function createWindow() {
+  console.log('🪟 Creating Electron window...');
   const win = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -46,16 +46,40 @@ async function createWindow() {
     // 开发模式：加载 Vite 服务器（假设外部已启动服务端和Vite）
     console.log('🔧 Development mode: Loading Vite dev server');
     try {
+      console.log('📡 Attempting to load http://localhost:5173');
       await win.loadURL('http://localhost:5173');
+      console.log('✅ Successfully loaded Vite dev server');
       win.webContents.openDevTools();
     } catch (error) {
       console.error('❌ Failed to load Vite dev server. Make sure to run "npm run server" and "npm run client" first.');
       console.error('Error:', error.message);
+      console.error('Stack:', error.stack);
+      
+      // 显示错误页面而不是退出
+      const errorHtml = `
+        <html>
+          <body style="font-family: Arial, sans-serif; padding: 20px; text-align: center;">
+            <h1>开发模式启动错误</h1>
+            <p>无法连接到 Vite 开发服务器</p>
+            <p>错误信息: ${error.message}</p>
+            <p>请确保已启动：</p>
+            <ul style="text-align: left; display: inline-block;">
+              <li>npm run server (后端服务器)</li>
+              <li>npm run client (Vite开发服务器)</li>
+            </ul>
+            <button onclick="location.reload()">重试</button>
+          </body>
+        </html>
+      `;
+      await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(errorHtml)}`);
     }
   } else {
     // 生产模式：启动内置服务并加载
     try {
       console.log('🚀 Production mode: Starting internal server');
+      
+      // 动态导入服务器模块以避免初始化时的better-sqlite3错误
+      const { startServer } = await import('../server/index.js');
       
       // 确保startServer函数存在
       if (!startServer) {
@@ -111,9 +135,12 @@ async function createWindow() {
 }
 
 // 单实例锁定
+console.log('🔐 Requesting single instance lock...');
 if (!app.requestSingleInstanceLock()) {
+  console.log('❌ Another instance is already running, quitting...');
   app.quit();
 } else {
+  console.log('✅ Single instance lock acquired');
   app.on('second-instance', () => {
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
@@ -122,6 +149,7 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.whenReady().then(async () => {
+    console.log('🚀 App is ready, initializing...');
     if (!isDev) {
       // 生产模式：修复 PATH 环境变量
       try {
@@ -137,7 +165,9 @@ if (!app.requestSingleInstanceLock()) {
       console.log('📁 User data directory:', process.env.APP_DATA_DIR);
     }
     
+    console.log('🪟 About to create main window...');
     mainWindow = await createWindow();
+    console.log('✅ Main window created successfully');
     
     // macOS 应用激活处理
     app.on('activate', () => {

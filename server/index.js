@@ -54,6 +54,7 @@ import gitRoutes from './routes/git.js';
 import authRoutes from './routes/auth.js';
 import mcpRoutes from './routes/mcp.js';
 import cursorRoutes from './routes/cursor.js';
+import workspaceRoutes from './routes/workspaces.js';
 import { initializeDatabase } from './database/db.js';
 import { validateApiKey, authenticateToken, authenticateWebSocket } from './middleware/auth.js';
 
@@ -191,6 +192,36 @@ app.use('/api/mcp', authenticateToken, mcpRoutes);
 // Cursor API Routes (protected)
 app.use('/api/cursor', authenticateToken, cursorRoutes);
 
+// Workspace API Routes (protected)
+app.use('/api/workspaces', authenticateToken, workspaceRoutes);
+
+// Abort session endpoint (HTTP fallback when WebSocket is not available)
+app.post('/api/abort-session', authenticateToken, (req, res) => {
+    const { sessionId, provider } = req.body;
+    
+    if (!sessionId) {
+        return res.status(400).json({ error: 'Session ID is required' });
+    }
+    
+    console.log('🛑 HTTP Abort session request:', sessionId, 'provider:', provider);
+    
+    try {
+        const success = provider === 'cursor' 
+            ? abortCursorSession(sessionId)
+            : abortClaudeSession(sessionId);
+        
+        res.json({ 
+            success, 
+            sessionId, 
+            provider: provider || 'claude',
+            message: success ? 'Session aborted successfully' : 'Session not found or already completed'
+        });
+    } catch (error) {
+        console.error('Error aborting session:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
 // Public API endpoints (no auth required)
 app.get('/api/config', (req, res) => {
     const host = req.headers.host || `${req.hostname}:${server.address()?.port || 3001}`;
@@ -206,6 +237,49 @@ app.get('/api/config', (req, res) => {
 
 // Static files served after API routes
 app.use(express.static(path.join(__dirname, '../dist')));
+
+// Claude commands endpoint - read .claude/commands/*.md files
+app.get('/api/commands', authenticateToken, async (req, res) => {
+    try {
+        const { projectName } = req.query;
+        const commands = {};
+        
+        // Load user-level commands from ~/.claude/commands/**/*.md
+        try {
+            const userCommandsPath = path.join(os.homedir(), '.claude', 'commands');
+            if (await fsPromises.access(userCommandsPath).then(() => true).catch(() => false)) {
+                const userCommands = await loadCommandsFromDirectory(userCommandsPath);
+                commands.user = userCommands;
+                console.log(`Loaded ${userCommands.length} user-level commands`);
+            }
+        } catch (error) {
+            console.log('No user-level .claude/commands directory found');
+        }
+        
+        // Load project-level commands if projectName is provided
+        if (projectName) {
+            try {
+                const projects = await getProjects();
+                const project = projects.find(p => p.name === projectName);
+                if (project) {
+                    const projectCommandsPath = path.join(project.path, '.claude', 'commands');
+                    if (await fsPromises.access(projectCommandsPath).then(() => true).catch(() => false)) {
+                        const projectCommands = await loadCommandsFromDirectory(projectCommandsPath);
+                        commands.project = projectCommands;
+                        console.log(`Loaded ${projectCommands.length} project-level commands`);
+                    }
+                }
+            } catch (error) {
+                console.log('No project-level .claude/commands directory found');
+            }
+        }
+        
+        res.json(commands);
+    } catch (error) {
+        console.error('Error loading commands:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
 
 app.get('/api/projects', authenticateToken, async (req, res) => {
     try {
@@ -991,6 +1065,121 @@ app.get('*', (req, res) => {
     res.redirect(`http://localhost:${process.env.VITE_PORT || 5173}`);
   }
 });
+
+// Helper function to recursively load all .md command files from a directory
+async function loadCommandsFromDirectory(dirPath) {
+    const commands = [];
+    
+    try {
+        const loadFromDir = async (currentPath) => {
+            const items = await fsPromises.readdir(currentPath, { withFileTypes: true });
+            
+            for (const item of items) {
+                const fullPath = path.join(currentPath, item.name);
+                
+                if (item.isDirectory()) {
+                    // Recursively search subdirectories
+                    await loadFromDir(fullPath);
+                } else if (item.isFile() && item.name.endsWith('.md')) {
+                    // Parse .md command file
+                    try {
+                        const content = await fsPromises.readFile(fullPath, 'utf8');
+                        const command = parseMarkdownCommandFile(content, item.name, fullPath);
+                        if (command) {
+                            commands.push(command);
+                        }
+                    } catch (error) {
+                        console.warn(`Failed to parse command file ${fullPath}:`, error.message);
+                    }
+                }
+            }
+        };
+        
+        await loadFromDir(dirPath);
+    } catch (error) {
+        console.warn(`Failed to load commands from ${dirPath}:`, error.message);
+    }
+    
+    return commands;
+}
+
+// Helper function to parse .claude/commands/*.md file format
+function parseMarkdownCommandFile(content, filename, filePath) {
+    const lines = content.split('\n');
+    let title = '';
+    let usage = '';
+    let description = '';
+    let context = '';
+    
+    // Parse markdown structure
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        
+        // Get title from first # heading
+        if (!title && line.startsWith('# ')) {
+            title = line.substring(2).trim();
+        }
+        
+        // Get usage from ## Usage section
+        if (line === '## Usage' && i + 1 < lines.length) {
+            const usageLine = lines[i + 1].trim();
+            if (usageLine.startsWith('`') && usageLine.endsWith('`')) {
+                usage = usageLine.substring(1, usageLine.length - 1);
+            }
+        }
+        
+        // Get context/description from ## Context section
+        if (line === '## Context') {
+            let j = i + 1;
+            const contextLines = [];
+            while (j < lines.length && !lines[j].trim().startsWith('##')) {
+                const contextLine = lines[j].trim();
+                if (contextLine && !contextLine.startsWith('-') && !contextLine.startsWith('*')) {
+                    contextLines.push(contextLine);
+                }
+                j++;
+            }
+            context = contextLines.join(' ');
+        }
+    }
+    
+    // Extract command name and flags from usage
+    let commandName = '';
+    let flags = [];
+    
+    if (usage) {
+        // Parse usage like "/project:debug <TASK_DESCRIPTION>" or "/mycommand --flag"
+        const usageParts = usage.split(/\s+/);
+        commandName = usageParts[0];
+        flags = usageParts.filter(part => part.startsWith('--'));
+    }
+    
+    // Fallback to filename if no command name found
+    if (!commandName) {
+        commandName = '/' + filename.replace('.md', '');
+    }
+    
+    // Build description from title and context
+    description = title;
+    if (context && context !== title) {
+        description += (description ? ': ' : '') + context;
+    }
+    
+    const command = {
+        id: `file_${path.basename(filePath, '.md')}_${Math.random().toString(36).substr(2, 9)}`,
+        name: commandName,
+        category: 'Custom',
+        description: description || `Custom command from ${filename}`,
+        icon: '📋',
+        flags: flags,
+        examples: [usage || commandName],
+        isFileCommand: true,
+        filePath: filePath,
+        source: 'markdown'
+    };
+    
+    return command;
+}
 
 // Helper function to convert permissions to rwx format
 function permToRwx(perm) {

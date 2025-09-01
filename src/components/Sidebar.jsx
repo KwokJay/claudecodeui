@@ -9,6 +9,7 @@ import { cn } from '../lib/utils';
 import ClaudeLogo from './ClaudeLogo';
 import CursorLogo from './CursorLogo.jsx';
 import { api } from '../utils/api';
+import WorkspaceSelector from './WorkspaceSelector';
 
 // Move formatTimeAgo outside component to avoid recreation on every render
 const formatTimeAgo = (dateString, currentTime) => {
@@ -624,6 +625,21 @@ function Sidebar({
           </div>
         </div>
       )}
+      
+      {/* Workspace Selector */}
+      <div className="md:px-4 md:pb-3">
+        <WorkspaceSelector 
+          onWorkspaceChange={(workspace) => {
+            // Handle workspace change - this will trigger project refresh
+            console.log('Workspace changed:', workspace);
+            // Optionally trigger project refresh here if needed
+            if (onRefresh) {
+              onRefresh();
+            }
+          }}
+          className="mb-4"
+        />
+      </div>
       
       {/* Projects List */}
       <ScrollArea className="flex-1 md:px-2 md:py-3 overflow-y-auto overscroll-contain">

@@ -2405,12 +2405,36 @@ function ChatInterface({ selectedProject, selectedSession, ws, sendMessage, mess
     }
   }, [messages]);
 
-  // Load file list when project changes
+  // Load file list and commands when project changes
   useEffect(() => {
     if (selectedProject) {
       fetchProjectFiles();
+      loadFileCommands();
     }
   }, [selectedProject]);
+  
+  // Load file commands from .claude/commands
+  const loadFileCommands = async () => {
+    if (selectedProject) {
+      await commandManager.loadFileCommands(selectedProject.name);
+    } else {
+      await commandManager.loadFileCommands();
+    }
+  };
+
+  // Handle scrolling for selected command
+  useEffect(() => {
+    if (selectedCommandIndex >= 0 && showCommandMenu) {
+      const commandDropdown = document.querySelector('.command-dropdown');
+      const selectedElement = commandDropdown?.children[selectedCommandIndex];
+      if (selectedElement) {
+        selectedElement.scrollIntoView({
+          behavior: 'smooth',
+          block: 'nearest'
+        });
+      }
+    }
+  }, [selectedCommandIndex, showCommandMenu]);
 
   const fetchProjectFiles = async () => {
     try {
@@ -2491,8 +2515,13 @@ function ChatInterface({ selectedProject, selectedSession, ws, sendMessage, mess
         setShowCommandMenu(true);
         
         // Filter commands based on the text after /
+        console.log('🔍 COMMAND SYSTEM TRIGGERED! Query:', textAfterSlash);
         const searchQuery = textAfterSlash.toLowerCase();
-        const filtered = commandManager.searchCommands(searchQuery, 8); // Limit to 8 results
+        const filtered = commandManager.searchCommands(searchQuery, 50); // Show more results
+        console.log('📋 COMMANDS FOUND:', filtered.length, 'commands');
+        if (filtered.length > 0) {
+          console.log('First command:', filtered[0].name, filtered[0].description);
+        }
         
         setFilteredCommands(filtered);
         setSelectedCommandIndex(-1);
@@ -3042,12 +3071,66 @@ function ChatInterface({ selectedProject, selectedSession, ws, sendMessage, mess
     setCanAbortSession(false);
   };
   
-  const handleAbortSession = () => {
+  const handleAbortSession = async () => {
+    console.log('🛑 Stop button clicked!');
+    console.log('currentSessionId:', currentSessionId);
+    console.log('canAbortSession:', canAbortSession);
+    console.log('provider:', provider);
+    
     if (currentSessionId && canAbortSession) {
-      sendMessage({
-        type: 'abort-session',
-        sessionId: currentSessionId,
-        provider: provider
+      console.log('✅ Sending abort message...');
+      
+      // Check if WebSocket is connected, if not use HTTP fallback
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        try {
+          sendMessage({
+            type: 'abort-session',
+            sessionId: currentSessionId,
+            provider: provider
+          });
+          console.log('✅ Abort sent via WebSocket');
+          return; // Exit early if WebSocket succeeds
+        } catch (error) {
+          console.log('❌ WebSocket send failed, trying HTTP fallback...', error);
+        }
+      } else {
+        console.log('❌ WebSocket not connected, using HTTP fallback...');
+      }
+      
+      // Fallback to HTTP API when WebSocket is not available
+      try {
+          const response = await fetch('/api/abort-session', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${localStorage.getItem('auth-token')}`
+            },
+            body: JSON.stringify({
+              sessionId: currentSessionId,
+              provider: provider
+            })
+          });
+          
+          if (response.ok) {
+            console.log('✅ Abort sent via HTTP fallback');
+            // Manually trigger session abort UI update
+            setIsLoading(false);
+            setCanAbortSession(false);
+            setChatMessages(prev => [...prev, {
+              type: 'assistant',
+              content: 'Session interrupted by user.',
+              timestamp: new Date()
+            }]);
+          } else {
+            console.error('❌ HTTP abort failed:', response.statusText);
+          }
+        } catch (httpError) {
+          console.error('❌ HTTP abort error:', httpError);
+        }
+    } else {
+      console.log('❌ Cannot abort:', {
+        hasSessionId: !!currentSessionId,
+        canAbort: canAbortSession
       });
     }
   };
@@ -3423,14 +3506,14 @@ function ChatInterface({ selectedProject, selectedSession, ws, sendMessage, mess
           
           {/* Command dropdown - positioned outside dropzone to avoid conflicts */}
           {showCommandMenu && filteredCommands.length > 0 && (
-            <div className="absolute bottom-full left-0 right-0 mb-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-lg max-h-64 overflow-y-auto z-50 backdrop-blur-sm">
+            <div className="command-dropdown absolute bottom-full left-0 right-0 mb-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg shadow-xl max-h-80 overflow-y-auto z-50 backdrop-blur-sm">
               {filteredCommands.map((command, index) => (
                 <div
                   key={command.id}
-                  className={`px-4 py-3 cursor-pointer border-b border-gray-100 dark:border-gray-700 last:border-b-0 touch-manipulation transition-colors ${
+                  className={`px-4 py-3 cursor-pointer border-b border-gray-100 dark:border-gray-700 last:border-b-0 touch-manipulation transition-all duration-200 ${
                     index === selectedCommandIndex
-                      ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300'
-                      : 'hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300'
+                      ? 'bg-blue-100 dark:bg-blue-800/40 text-blue-800 dark:text-blue-200 shadow-inner'
+                      : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-200'
                   }`}
                   onMouseDown={(e) => {
                     // Prevent textarea from losing focus on mobile
@@ -3626,15 +3709,15 @@ function ChatInterface({ selectedProject, selectedSession, ws, sendMessage, mess
           {/* Hint text */}
           <div className="text-xs text-gray-500 dark:text-gray-400 text-center mt-2 hidden sm:block">
             {sendByCtrlEnter 
-              ? "Ctrl+Enter to send (IME safe) • Shift+Enter for new line • Tab to change modes • @ to reference files" 
-              : "Press Enter to send • Shift+Enter for new line • Tab to change modes • @ to reference files"}
+              ? "Ctrl+Enter to send (IME safe) • Shift+Enter for new line • / for commands • @ to reference files" 
+              : "Press Enter to send • Shift+Enter for new line • / for commands • @ to reference files"}
           </div>
           <div className={`text-xs text-gray-500 dark:text-gray-400 text-center mt-2 sm:hidden transition-opacity duration-200 ${
             isInputFocused ? 'opacity-100' : 'opacity-0'
           }`}>
             {sendByCtrlEnter 
-              ? "Ctrl+Enter to send (IME safe) • Tab for modes • @ for files" 
-              : "Enter to send • Tab for modes • @ for files"}
+              ? "Ctrl+Enter to send (IME safe) • / for commands • @ for files" 
+              : "Enter to send • / for commands • @ for files"}
           </div>
         </form>
       </div>
