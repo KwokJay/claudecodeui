@@ -12,15 +12,15 @@
   - 技术实现和使用指南
 
 ### 主要文档
-- **[../CLAUDE.md](../CLAUDE.md)** - 项目总体架构和开发指南
+- **[../说明文档.md](../说明文档.md)** - 项目总体架构与权威文档入口（唯一权威入口）
 - **[../README.md](../README.md)** - 项目基本信息和快速开始
 
 ## 快速导航
 
 ### 开发者
-- 架构概览: [CLAUDE.md - Architecture Overview](../CLAUDE.md#architecture-overview)
-- 开发命令: [CLAUDE.md - Development Commands](../CLAUDE.md#development-commands)
-- 环境配置: [CLAUDE.md - Environment Configuration](../CLAUDE.md#environment-configuration)
+- 架构概览: [说明文档.md - 项目规划](../说明文档.md)
+- 开发命令: [说明文档.md - 实施方案](../说明文档.md)
+- 环境配置: [说明文档.md - 规范与流程](../说明文档.md)
 
 ### 用户
 - 命令系统使用: [COMMANDS.md - 使用指南](./COMMANDS.md#使用指南)
